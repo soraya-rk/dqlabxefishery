@@ -1,0 +1,309 @@
+---
+title: "DQlab x efishery Data Challenge"
+author: "by Soraya Rizka Keumala"
+date: "23-06-2019"
+output:
+  html_document:
+    df_print: paged
+    highlight: tango
+    theme: cosmo
+    toc: yes
+    toc_float:
+      collapsed: no
+  pdf_document:
+    toc: yes
+---
+
+Report ini dibuat untuk mengikuti Data Challenge DQ Lab x efishery, Juni 2019.
+
+Report ini mengandung Plotly. Untuk interactive visualization, dapat juga diliat di **Rpubs**: http://rpubs.com/sorayarizka/dqlabxefishery
+
+_________________________________________________________
+
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(ggthemes)
+library(GGally)
+library(ggalt)
+library(lmtest)
+library(knitr)
+```
+
+## DATA PREPARATION
+
+```{r}
+a.konsum <- read.csv("data-perikanan-nasional/angkakonsumsiikan.csv")
+a.benih <- read.csv("data-perikanan-nasional/jumlahproduksibenih.csv")
+a.pembudi <- read.csv("data-perikanan-nasional/pembudidayaikannasional.csv")
+a.olahan <- read.csv("data-perikanan-nasional/produkolahanikan.csv")
+a.prodbudi <- read.csv("data-perikanan-nasional/produksibudidayanasional.csv")
+a.perlakuan <- read.csv("data-perikanan-nasional/produksiperlakuanikannasional.csv")
+```
+
+Mengubah class `Tahun` dari integer ke factor
+
+```{r}
+a.konsum$Tahun <- as.factor(a.konsum$Tahun)
+a.benih$Tahun <- as.factor(a.benih$Tahun)
+a.pembudi$Tahun <- as.factor(a.pembudi$Tahun)
+a.olahan$Tahun <- as.factor(a.olahan$Tahun)
+a.prodbudi$Tahun <- as.factor(a.prodbudi$Tahun)
+a.perlakuan$Tahun <- as.factor(a.perlakuan$Tahun)
+```
+
+**Daftar istilah**:
+
+Volume: Volume produksi dihitung dalam bentuk berat basah ikan hasil tangkapan/budidaya
+Pembudidaya: Orang yang melakukan budidaya ikan
+
+_________________________________________________________
+
+## REPORT
+
+### Komoditas yang paling tinggi produksi budidayanya?
+
+Data yang dipakai *produksibudidayanasional*, lalu diaggregate menurut variabel `NamaIkan` menggunakan *dplyr* sesuai dengan rata-rata produksi selama 2003-2012
+
+```{r}
+kom <- a.prodbudi %>%
+  group_by(NamaIkan) %>%
+  summarise(meanVol=round(mean(Volume),2))
+kom <- na.omit(kom)
+```
+
+```{r}
+ggplot(head(kom, 5), aes(x=0, xend=meanVol, y=reorder(NamaIkan, meanVol/1000), label=round(meanVol/1000, 2)))+
+  geom_dumbbell(color="black", size=2)+
+  geom_label(size=3)+
+  xlim(0,10000)+
+  labs(title="Rata-rata Vol. Produksi tahunan (dalam ribuan)", x="rata-rata volume produksi 2003-2012 (ribu)", subtitle="per komoditas, data 2003-2012", y="Komoditas", hjust=3)
+```
+
+**Kesimpulan**: Bandeng merupakan komoditas yang paling dominan, dengan rata-rata volume produksi pertahunnya 973.000. Disusul oleh gurame (12)
+
+### 5 Provinsi dengan nilai produksi budidaya tertinggi?
+
+Masih memakai data *produksibudidayanasional*, kali ini diaggregate menurut `NamaProvinsi`, lalu diurutkan dari provinsi yang memiliki rata-rata volume produksi terbesar
+
+```{r}
+prodbudi_total <- a.prodbudi[a.prodbudi$NamaIkan =="total",]
+
+prodbudi_total <- prodbudi_total %>%
+  group_by(NamaProvinsi) %>% 
+  summarise(meanVolume=mean(Volume))
+
+prodbudi_total2 <- prodbudi_total[order(-prodbudi_total$meanVolume),]
+head(prodbudi_total2, 5)
+```
+
+**Kesimpulan**: Sulawesi Selatan, Jawa Barat, Sulawesi Tengah, Jawa Timur, dan NTT adalah 5 provinsi dengan volume produksi budidaya tertinggi.
+
+
+### Trend budidaya ikan nasional?
+
+Trend budidaya dapat dikur dengan banyaknya benih, volume olahan, banyaknya pembudidaya, dan volume produks budidaya. Karena ingin melihat trend historis, saya membuat tabel aggregate menurut tahun.
+
+```{r}
+indo.benih <- a.benih %>%
+  group_by(Tahun) %>%
+  summarise(indoJumlah=sum(Jumlah)) %>%
+  mutate(var="benih")
+indo.benih <- indo.benih[-1,]
+
+indo.olahan <- a.olahan[a.olahan$JenisOlahan =="semua",]
+indo.olahan <- indo.olahan %>%
+  group_by(Tahun) %>%
+  summarise(indoJumlah=sum(Volume)) %>%
+  mutate(var="olahan")
+indo.olahan <- indo.olahan[-c(1,2),]
+
+indo.pembudi <- a.pembudi %>%
+  group_by(Tahun) %>%
+  summarise(indoJumlah=sum(Jumlah)) %>%
+  mutate(var="pembudidaya")
+indo.pembudi <- indo.pembudi[-1,]
+
+indo.prodbudi <- a.prodbudi[a.prodbudi$NamaIkan =="total",]
+indo.prodbudi <- a.prodbudi %>%
+  group_by(Tahun) %>%
+  summarise(indoJumlah=sum(Volume)) %>%
+  mutate(var="prodbudi")
+
+```
+
+```{r}
+com <- rbind(indo.benih, indo.olahan, indo.pembudi, indo.prodbudi)
+
+trend.bud.nas <- ggplot(com, aes(Tahun, indoJumlah/1000000, group=var)) + #dalam juta
+  geom_line()+
+  facet_grid(var ~ .,scale="free_y")+
+  labs(title="Trend Budidaya Ikan Nasional 2003-2012", y="Total (juta)")
+
+trend.bud.nas
+```
+
+*Kesimpulan*: Jumlah pembudi daya dan jumlah produksi terus meningkat, namun jumlah benih dan volume produk olahan mengalami naik-turun, terutama tahun 2007 - 2012.
+
+### Pertumbuhan Produksi menurut Pulau
+
+Data yang diperoleh sebelumnya masih terbagi menurut provinsi. Dengan menggunakan function yang melihat ke angka pertama pada variabel `ProvinsiID`, saya membuat kolom baru yaitu `DaerahID` dan `Daerah` yang dibagi menurut pulau.
+
+```{r}
+reg <- a.prodbudi[a.prodbudi$NamaIkan =="total",]
+reg$DaerahID <- substr(reg$ProvinsiID, 1, 1)
+pulau <- function(x){
+    if(x == 1){
+      x <- "Sumatera"
+    }else if(x == 3){
+       x <- "Jawa"
+     }else if(x ==2){
+      x <- "Kepulauan Riau"
+     }else if(x == 5){
+       x <- "Bali-Nusa Tenggara"
+     }else if(x == 6){
+       x <- "Kalimantan"
+     }else if(x == 7){
+       x <- "Sulawesi"
+     }else if(x == 8){
+       x <- "Maluku"
+    }else{
+      x <- "Papua"}}
+
+reg$Daerah <- as.factor(sapply(reg$DaerahID, pulau))
+```
+
+Membuat tabel aggregate berdasarkan variabel `Daerah` dan `Tahun`
+
+```{r}
+reg2 <- reg %>%
+  group_by(Daerah, Tahun) %>%
+  summarize(totalVol=sum(Volume))
+```
+
+```{r}
+reg2.plot <- ggplot(reg2, aes(x=Tahun, y=totalVol, col=Daerah, group=Daerah))+
+  geom_line()
+reg2.plot
+```
+
+**Kesimpulan**: 
+
+- Produksi budidaya Provinsi di pulau Sulawesi meningkat sangat tajam dalam 10 tahun.
+
+- Budidaya ikan di Papua tidak terlalu populer
+
+- Kepulauan Riau merupakan provinsi baru, jadi data masih sedikit.
+
+
+_________________________________________________________
+
+## INSIGHT
+
+### Model regresi terhadap jumlah produk olahan
+
+Seberapa berpengaruh jumlah pembudidaya dan produksi budidaya terhadap jumlah produk olahan ikan? Untuk menjawabnya saya menggunakan metode **regresi linear**
+
+Variabel independen: jumlah pembudidaya, volume produksi budidaya (per provinsi, per tahun)
+
+Variabel dependen: jumlah produk olahan (per provinsi, per tahun)
+
+```{r}
+prov.olahan <- a.olahan %>%
+  group_by(Tahun, NamaProvinsi) %>%
+  summarise(provOlahan=sum(Volume))
+prov.olahan <- prov.olahan[prov.olahan$Tahun != "2001" & prov.olahan$Tahun != "2002",]
+
+prov.pembudi <- a.pembudi %>%
+  group_by(Tahun, NamaProvinsi) %>%
+  summarise(provPembudi=sum(Jumlah))
+prov.pembudi <- prov.pembudi[prov.pembudi$Tahun != "2001" & prov.pembudi$Tahun != "2002",]
+
+prov.prodbudi <- a.prodbudi %>%
+  group_by(Tahun, NamaProvinsi) %>%
+  summarise(provProd=sum(Volume))
+prov.prodbudi <- prov.prodbudi[prov.olahan$Tahun != "2001" & prov.prodbudi$Tahun != "2002",]
+
+```
+
+```{r}
+t1 <- as.data.frame(prov.olahan$Tahun)
+t2 <- as.data.frame(prov.olahan$provOlahan)
+t3 <- as.data.frame(prov.pembudi$provPembudi)
+t4 <- as.data.frame(prov.prodbudi$provProd)
+regresi <- cbind(t1, t2, t3, t4)
+colnames(regresi) <- c("Tahun", "Olahan", "Pembudidaya", "Produksi")
+```
+
+**Membuat Model regresi linear**
+
+```{r}
+library(lmtest)
+model_reg <- lm(Olahan ~ Produksi + Pembudidaya, regresi)
+model_reg$coefficients
+
+summary(model_reg)
+```
+**Kesimpulan**: P-value yang didapatkan adalah lebih besar dari <0.05 dan Adjusted R square 0.4%, artinya **tidak ada korelasi** antara jumlah pembudidaya dan produksi terhadap jumlah produk olahan.
+
+
+### Rasio Garis Pantai dan Volume Produksi (khusus perairan laut)
+
+Apakah dengan luasnya garis pantai, produksi budidaya ikan laut juga semakin bertambah?
+
+Kali ini saya menggunakan data lainnya (data garis pantai per provinsi) yang diambil dari Buku Statistik Sumber daya Laut dan Pesisir 2016, *Badan Pusat Statistik* (https://www.bps.go.id/publication/2016/12/20/9b1d875a713acca4d7c6d19c/statistik-sumber-daya-laut-dan-pesisir-2016.html) 
+
+```{r}
+rasio <- a.perlakuan[a.perlakuan$JenisPerairan == "Laut",]
+rasio <- rasio[rasio$JenisPerlakuan == "semua",]
+rasio <- rasio %>%
+        group_by(ProvinsiID) %>%
+        summarise(meanVol=mean(Volume))
+```
+
+```{r}
+garis.pt <- read.csv("data-perikanan-nasional/garis pantai.csv")
+rasio2 <- cbind(rasio, garis.pt)
+
+rasio2$rasioVolGP <- as.numeric(rasio2$meanVol)/rasio2$GarisPantai
+rasio2 <- rasio2[,-3]
+rasio2$DaerahID <- substr(rasio2$ProvinsiID, 1, 1)
+rasio2$Daerah <- as.factor(sapply(rasio2$DaerahID, pulau))
+```
+
+```{r}
+a <- ggplot(rasio2, aes(x=meanVol/1000, y=GarisPantai, col=Daerah, name=NamaProvinsi))+
+  geom_jitter()+
+  labs(title="Rasio produksi vs garis pantai", x="Rata-rata produksi budidaya perairan laut (ribu)", y="Garis Pantai (km2)", subtitle="Per provinsi, data 2003-2012", hjust=3)
+
+a
+```
+
+**Kesimpulan**L Ada provinsi yang memiliki garis pantai luas, namun produksi budidaya lautnya sedikit (Papua Barat), Namun ada juga banyak produksinya (cth: Maluku). Sumatra Utara & Jawa Timur merupakan provinsi yang garis pantainya kecil, namun produksi budidaya lautnya banyak.
+
+Bila dibandingkan dengan grafik 5 Provinsi dengan jumlah produksi terbanyak di subbab sebelumnya, dimana Sulawesi Selatan dan Jawa Barat adalah provinsi yang paling banyak jumlah produksi budidaya (laut & umum), jumlah budidaya laut kedua provinsi tersebut tidak terlalu banyak (dalam grafik ini berada di kuadran bawah-tengah).
+
+
+### Kesenjangan produksi budidaya antar daerah
+
+```{r}
+reg1 <- reg %>%
+  group_by(Daerah) %>%
+  summarize(meanVol=mean(Volume))
+
+reg1$percMeanVol <- reg1$meanVol/sum(reg1$meanVol)
+pie(reg1$meanVol, labels=names(table(reg1$Daerah)), col=topo.colors(8))
+```
+
+**Kesimpulan**: Sulawesi merupakan pulau dengan jumlah produksi budidaya terbesar, disusul Bali-Nusa Tenggara, dan Jawa. Meski Sumatera adalah pulau dengan jumlah penduduk ke-2 terpadat setelah jawa, budidaya tidak terlalu populer.
+
+## SUMBER
+
+- Daftara Istilah Perikanan, *Badan Pusat Statistik* https://www.bps.go.id/subject/56/perikanan.html#subjekViewTab1
+- Statistik Sumber daya Laut dan Pesisir 2016, *Badan Pusat Statistik* (https://www.bps.go.id/publication/2016/12/20/9b1d875a713acca4d7c6d19c/statistik-sumber-daya-laut-dan-pesisir-2016.html) 
+
+## GITHUB LINK
+
+Rmarkdown dapat didownload di https://github.com/soraya-rk/dqlabxefishery
